@@ -11,18 +11,19 @@ class ServiceUpdateRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
+        $serviceId = $this->route('service');
+
         return [
-            //
+            'name' => ['required', 'string', 'max:150'],
+            'description' => ['nullable', 'string'],
+            'duration_minutes' => ['required', 'integer', 'min:1'],
+            'price' => ['required', 'numeric', 'min:0', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'is_active' => ['boolean'],
         ];
     }
 }
