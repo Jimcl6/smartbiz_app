@@ -2,19 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\BaseApiController;
 use App\Http\Requests\PaymentRequest;
-use App\Models\ActivityLog;
 use App\Models\Payment;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 
-class PaymentController extends Controller
+class PaymentController extends BaseApiController
 {
     public function index(): JsonResponse
     {
-        $payments = Payment::with('appointment')->get();
+        $payments = Payment::with(['appointment.client:id,name'])
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         return response()->json([
             'payments' => $payments
@@ -35,15 +35,13 @@ class PaymentController extends Controller
 
         $this->logActivity('recorded_payment', 'payment', $payment->id);
 
-        return response()->json([
-            'payment' => $payment->load('appointment'),
-            'message' => 'Payment recorded successfully'
-        ], 201);
+        return $this->successResponse('Payment recorded successfully', ['payment' => $payment->load('appointment')], 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $payment = Payment::with('appointment')->findOrFail($id);
+        $payment = Payment::with(['appointment.client:id,name,email', 'appointment.services:id,name,price'])
+            ->findOrFail($id);
 
         return response()->json([
             'payment' => $payment
@@ -54,23 +52,20 @@ class PaymentController extends Controller
     {
         $payment = Payment::findOrFail($id);
 
-        $validated = $request->validate([
+        $validatedData = $request->validate([
             'status' => ['required', 'in:pending,paid,failed'],
             'paid_at' => ['nullable', 'date'],
         ]);
 
-        if ($validated['status'] === 'paid' && !$validated['paid_at']) {
-            $validated['paid_at'] = now()->toDateTimeString();
+        if ($validatedData['status'] === 'paid' && !$validatedData['paid_at']) {
+            $validatedData['paid_at'] = now()->toDateTimeString();
         }
 
-        $payment->update($validated);
+        $payment->update($validatedData);
 
         $this->logActivity('updated_payment_status', 'payment', $payment->id);
 
-        return response()->json([
-            'payment' => $payment->load('appointment'),
-            'message' => 'Payment status updated successfully'
-        ]);
+        return $this->successResponse('Payment status updated successfully', ['payment' => $payment->load('appointment')]);
     }
 
     public function destroy(string $id): JsonResponse
@@ -80,18 +75,7 @@ class PaymentController extends Controller
 
         $this->logActivity('deleted_payment', 'payment', $id);
 
-        return response()->json([
-            'message' => 'Payment deleted successfully'
-        ]);
+        return $this->successResponse('Payment deleted successfully');
     }
 
-    private function logActivity(string $action, string $entity, int $entityId): void
-    {
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'action' => $action,
-            'entity' => $entity,
-            'entity_id' => $entityId,
-        ]);
-    }
 }

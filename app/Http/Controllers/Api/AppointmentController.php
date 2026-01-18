@@ -2,22 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\BaseApiController;
 use App\Http\Requests\AppointmentRequest;
 use App\Http\Requests\AppointmentUpdateRequest;
-use App\Models\ActivityLog;
 use App\Models\Appointment;
 use App\Models\Service;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
-class AppointmentController extends Controller
+class AppointmentController extends BaseApiController
 {
     public function index(): JsonResponse
     {
-        $appointments = Appointment::with(['client', 'services'])->get();
+        $appointments = Appointment::with(['client:id,name,email', 'services:id,name,price'])
+            ->orderBy('scheduled_at', 'desc')
+            ->get();
 
         return response()->json([
             'appointments' => $appointments
@@ -26,32 +25,33 @@ class AppointmentController extends Controller
 
     public function store(AppointmentRequest $request): JsonResponse
     {
-        $validated = $request->validated();
+        $validatedData = $request->validated();
 
-        $appointment = DB::transaction(function () use ($validated) {
+        $appointment = DB::transaction(function () use ($validatedData) {
             $appointment = Appointment::create([
-                'client_id' => $validated['client_id'],
-                'scheduled_at' => $validated['scheduled_at'],
-                'status' => $validated['status'] ?? 'pending',
-                'notes' => $validated['notes'] ?? null,
+                'client_id' => $validatedData['client_id'],
+                'scheduled_at' => $validatedData['scheduled_at'],
+                'status' => $validatedData['status'] ?? 'pending',
+                'notes' => $validatedData['notes'] ?? null,
             ]);
 
-            $appointment->services()->attach($validated['service_ids']);
+            $appointment->services()->attach($validatedData['service_ids']);
 
             return $appointment;
         });
 
         $this->logActivity('created', 'appointment', $appointment->id);
 
-        return response()->json([
-            'appointment' => $appointment->load('client', 'services'),
-            'message' => 'Appointment created successfully'
-        ], 201);
+        return $this->successResponse('Appointment created successfully', ['appointment' => $appointment->load('client', 'services')], 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $appointment = Appointment::with(['client', 'services', 'payments'])->findOrFail($id);
+        $appointment = Appointment::with([
+            'client:id,name,email,phone',
+            'services:id,name,description,price,duration_minutes',
+            'payments:id,amount,method,status,paid_at'
+        ])->findOrFail($id);
 
         return response()->json([
             'appointment' => $appointment
@@ -67,10 +67,7 @@ class AppointmentController extends Controller
 
         $this->logActivity('updated', 'appointment', $appointment->id);
 
-        return response()->json([
-            'appointment' => $appointment->load('client', 'services'),
-            'message' => 'Appointment updated successfully'
-        ]);
+        return $this->successResponse('Appointment updated successfully', ['appointment' => $appointment->load('client', 'services')]);
     }
 
     public function destroy(string $id): JsonResponse
@@ -80,9 +77,7 @@ class AppointmentController extends Controller
 
         $this->logActivity('deleted', 'appointment', $id);
 
-        return response()->json([
-            'message' => 'Appointment deleted successfully'
-        ]);
+        return $this->successResponse('Appointment deleted successfully');
     }
 
     public function attachService(string $appointment, string $service): JsonResponse
@@ -91,18 +86,14 @@ class AppointmentController extends Controller
         $service = Service::findOrFail($service);
 
         if ($appointment->services()->where('service_id', $service)->exists()) {
-            return response()->json([
-                'message' => 'Service is already attached to this appointment'
-            ], 422);
+            return $this->errorResponse('Service is already attached to this appointment', 422);
         }
 
         $appointment->services()->attach($service);
 
         $this->logActivity('attached_service', 'appointment', $appointment->id);
 
-        return response()->json([
-            'message' => 'Service attached successfully'
-        ]);
+        return $this->successResponse('Service attached successfully');
     }
 
     public function detachService(string $appointment, string $service): JsonResponse
@@ -111,27 +102,14 @@ class AppointmentController extends Controller
         $service = Service::findOrFail($service);
 
         if (!$appointment->services()->where('service_id', $service)->exists()) {
-            return response()->json([
-                'message' => 'Service is not attached to this appointment'
-            ], 422);
+            return $this->errorResponse('Service is not attached to this appointment', 422);
         }
 
         $appointment->services()->detach($service);
 
         $this->logActivity('detached_service', 'appointment', $appointment->id);
 
-        return response()->json([
-            'message' => 'Service detached successfully'
-        ]);
+        return $this->successResponse('Service detached successfully');
     }
 
-    private function logActivity(string $action, string $entity, int $entityId): void
-    {
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'action' => $action,
-            'entity' => $entity,
-            'entity_id' => $entityId,
-        ]);
-    }
 }

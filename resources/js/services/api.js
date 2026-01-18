@@ -1,12 +1,21 @@
-const API_BASE_URL = '/api'
-
 class ApiService {
     constructor() {
         this.token = localStorage.getItem('token')
+        this.baseURL = import.meta.env.VITE_API_URL || '/api'
+    }
+
+    setToken(token) {
+        this.token = token
+        localStorage.setItem('token', token)
+    }
+
+    clearToken() {
+        this.token = null
+        localStorage.removeItem('token')
     }
 
     async request(endpoint, options = {}) {
-        const url = `${API_BASE_URL}${endpoint}`
+        const url = `${this.baseURL}${endpoint}`
         const config = {
             headers: {
                 'Content-Type': 'application/json',
@@ -20,28 +29,62 @@ class ApiService {
             config.headers.Authorization = `Bearer ${this.token}`
         }
 
-        const response = await fetch(url, config)
-        const data = await response.json()
+        try {
+            const response = await fetch(url, config)
+            const data = await response.json()
 
-        if (!response.ok) {
-            throw new Error(data.message || 'Request failed')
+            if (!response.ok) {
+                // Handle 401 Unauthorized
+                if (response.status === 401) {
+                    this.clearToken()
+                    window.location.href = '/login'
+                    throw new Error('Session expired. Please login again.')
+                }
+
+                // Handle 422 Validation errors
+                if (response.status === 422 && data.errors) {
+                    const errorMessage = Object.values(data.errors).flat().join(', ')
+                    throw new Error(errorMessage || 'Validation failed')
+                }
+
+                throw new Error(data.message || 'Request failed')
+            }
+
+            return data
+        } catch (error) {
+            console.error(`API Error [${endpoint}]:`, error)
+
+            // Re-throw with more context
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                throw new Error('Network error. Please check your connection.')
+            }
+
+            throw error
+        }
+    }
+
+    // Auth endpoints
+    async login(credentials) {
+        const data = await this.request('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify(credentials)
+        })
+
+        if (data.token) {
+            this.setToken(data.token)
         }
 
         return data
     }
 
-    // Auth endpoints
-    async login(credentials) {
-        return this.request('/auth/login', {
-            method: 'POST',
-            body: JSON.stringify(credentials)
-        })
-    }
-
     async logout() {
-        return this.request('/auth/logout', {
-            method: 'POST'
-        })
+        try {
+            await this.request('/auth/logout', {
+                method: 'POST'
+            })
+        } finally {
+            this.clearToken()
+        }
     }
 
     async getUser() {

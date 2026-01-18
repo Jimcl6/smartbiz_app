@@ -2,20 +2,19 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\BaseApiController;
 use App\Http\Requests\ClientRequest;
 use App\Http\Requests\ClientUpdateRequest;
-use App\Models\ActivityLog;
 use App\Models\Client;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Auth;
 
-class ClientController extends Controller
+class ClientController extends BaseApiController
 {
     public function index(): JsonResponse
     {
-        $clients = Client::with('appointments')->get();
+        $clients = Client::withCount('appointments')
+            ->orderBy('name')
+            ->get();
 
         return response()->json([
             'clients' => $clients
@@ -28,15 +27,13 @@ class ClientController extends Controller
 
         $this->logActivity('created', 'client', $client->id);
 
-        return response()->json([
-            'client' => $client,
-            'message' => 'Client created successfully'
-        ], 201);
+        return $this->successResponse('Client created successfully', ['client' => $client], 201);
     }
 
     public function show(string $id): JsonResponse
     {
-        $client = Client::with('appointments')->findOrFail($id);
+        $client = Client::withCount('appointments')
+            ->findOrFail($id);
 
         return response()->json([
             'client' => $client
@@ -50,10 +47,7 @@ class ClientController extends Controller
 
         $this->logActivity('updated', 'client', $client->id);
 
-        return response()->json([
-            'client' => $client,
-            'message' => 'Client updated successfully'
-        ]);
+        return $this->successResponse('Client updated successfully', ['client' => $client]);
     }
 
     public function destroy(string $id): JsonResponse
@@ -63,18 +57,7 @@ class ClientController extends Controller
 
         $this->logActivity('deleted', 'client', $id);
 
-        return response()->json([
-            'message' => 'Client deleted successfully'
-        ]);
+        return $this->successResponse('Client deleted successfully');
     }
 
-    private function logActivity(string $action, string $entity, int $entityId): void
-    {
-        ActivityLog::create([
-            'user_id' => Auth::id(),
-            'action' => $action,
-            'entity' => $entity,
-            'entity_id' => $entityId,
-        ]);
-    }
 }
