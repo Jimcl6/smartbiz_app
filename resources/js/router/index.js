@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { requireAuth } from './guards.js'
 
 const router = createRouter({
     history: createWebHistory(),
@@ -70,6 +71,16 @@ const router = createRouter({
             meta: { requiresAuth: true }
         }
     ]
+})
+
+router.beforeEach((to, from, next) => {
+    if (to.meta.requiresAuth) {
+        requireAuth(to, from, next)
+    } else if (to.meta.requiresGuest) {
+        requireGuest(to, from, next)
+    } else {
+        next()
+    }
 })
 
 export default router

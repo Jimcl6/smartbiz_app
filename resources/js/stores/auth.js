@@ -4,9 +4,15 @@ import { useRouter } from 'vue-router'
 export function useAuthStore() {
     const user = ref(null)
     const token = ref(localStorage.getItem('token'))
-    const isAuthenticated = computed(() => !!user.value)
+    const loading = ref(false)
+    const error = ref('')
+
+    const isAuthenticated = computed(() => !!user.value && !!token.value)
 
     const login = async (credentials) => {
+        loading.value = true
+        error.value = ''
+
         try {
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
@@ -22,18 +28,26 @@ export function useAuthStore() {
 
             if (response.ok) {
                 user.value = data.user
-                token.value = data.token
-                localStorage.setItem('token', data.token)
+                token.value = data.token || null
+                if (token.value) {
+                    localStorage.setItem('token', token.value)
+                }
                 return { success: true }
             } else {
+                error.value = data.message || 'Login failed'
                 return { success: false, error: data.message }
             }
-        } catch (error) {
-            return { success: false, error: 'Login failed' }
+        } catch (err) {
+            error.value = 'Network error. Please try again.'
+            return { success: false, error: 'Network error' }
+        } finally {
+            loading.value = false
         }
     }
 
     const logout = async () => {
+        loading.value = true
+
         try {
             await fetch('/api/auth/logout', {
                 method: 'POST',
@@ -46,12 +60,19 @@ export function useAuthStore() {
             token.value = null
             localStorage.removeItem('token')
             return { success: true }
-        } catch (error) {
+        } catch (err) {
+            error.value = 'Logout failed'
             return { success: false, error: 'Logout failed' }
+        } finally {
+            loading.value = false
         }
     }
 
     const fetchUser = async () => {
+        if (!token.value) return
+
+        loading.value = true
+
         try {
             const response = await fetch('/api/auth/user', {
                 headers: {
@@ -64,17 +85,26 @@ export function useAuthStore() {
                 const data = await response.json()
                 user.value = data.user
             }
-        } catch (error) {
-            console.error('Failed to fetch user:', error)
+        } catch (err) {
+            console.error('Failed to fetch user:', err)
+        } finally {
+            loading.value = false
         }
+    }
+
+    const clearError = () => {
+        error.value = ''
     }
 
     return {
         user,
         token,
+        loading,
+        error,
         isAuthenticated,
         login,
         logout,
-        fetchUser
+        fetchUser,
+        clearError
     }
 }
